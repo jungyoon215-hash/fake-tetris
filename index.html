@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>색깔이 바뀌는 무작위 테트리스</title>
+  <!-- Tailwind CSS 활용 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide 아이콘 사용 -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    /* 모바일 터치 시 파란색 하이라이트 박스 제거 */
+    * {
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    body {
+      background-color: #0f172a;
+      touch-action: none; /* 브라우저 기본 스크롤 및 더블탭 줌 방지 */
+    }
+    /* 그리드 보드 스타일 */
+    .game-grid {
+      display: grid;
+      grid-template-rows: repeat(20, minmax(0, 1fr));
+      grid-template-columns: repeat(10, minmax(0, 1fr));
+    }
+    /* 네온 발광 효과 */
+    .neon-border {
+      box-shadow: 0 0 15px rgba(168, 85, 247, 0.4);
+    }
+    .neon-text {
+      text-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
+    }
+    /* 터치 피드백 이펙트 */
+    .touch-indicator {
+      transition: opacity 0.2s ease;
+    }
+  </style>
+</head>
+<body class="flex flex-col items-center justify-between min-h-screen text-white font-sans p-4">
+
+  <!-- 상단 헤더 및 스코어 보드 -->
+  <header class="w-full max-w-md flex justify-between items-center mb-2">
+    <div class="flex flex-col">
+      <h1 class="text-xl font-black tracking-wider text-purple-400 neon-text">RANDOM COLOR</h1>
+      <p class="text-xs text-slate-400">줄을 지우면 색이 뒤바뀝니다!</p>
+    </div>
+    <div class="flex gap-2">
+      <button id="reset-btn" class="bg-slate-800 hover:bg-slate-700 p-2 rounded-lg border border-slate-700 transition">
+        <i data-lucide="rotate-ccw" class="w-5 h-5 text-purple-400"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- 메인 게임 영역 -->
+  <main class="w-full max-w-md flex flex-col items-center justify-center flex-grow">
+    
+    <!-- 상태 바 (다음 블록 정보 및 셔플 타겟 알림) -->
+    <div class="w-full grid grid-cols-2 gap-2 mb-3">
+      
+      <!-- 다음 블록 미니 프리뷰 (안내 강화) -->
+      <div class="flex items-center gap-3 bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-2">
+        <div class="flex flex-col justify-center">
+          <span class="text-[10px] text-purple-400 font-extrabold uppercase tracking-wider">NEXT PIECE</span>
+          <!-- 다음에 올 블록의 한글 명칭 표시부 -->
+          <span id="next-piece-name" class="text-xs font-bold text-white whitespace-nowrap">대기 중...</span>
+        </div>
+        <div id="next-preview" class="grid grid-cols-4 grid-rows-4 gap-[2px] w-12 h-12 ml-auto bg-slate-950/80 p-1 rounded-md border border-slate-800">
+          <!-- JS에서 다음 블록 모양 미리보기 렌더링 -->
+        </div>
+      </div>
+
+      <!-- 색상 변경 게이지 / 타겟 수치 -->
+      <div class="flex flex-col justify-center items-end bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-2">
+        <span class="text-[10px] text-purple-400 font-bold tracking-wider uppercase">COLOR SHUFFLE IN</span>
+        <div class="flex items-center gap-2">
+          <span id="shuffle-progress" class="text-lg font-black text-white">0 / 3</span>
+          <span class="text-xs text-slate-400">lines</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 테트리스 캔버스/보드 영역 -->
+    <div class="relative w-full aspect-[10/20] max-h-[60vh] bg-slate-950 rounded-2xl overflow-hidden border-2 border-purple-500/50 neon-border">
+      <!-- 실제 게임 판 -->
+      <div id="game-board" class="game-grid w-full h-full p-[2px] gap-[1px]">
+        <!-- JavaScript가 타일을 채웁니다 -->
+      </div>
+
+      <!-- 게임오버/대기 화면 오버레이 -->
+      <div id="overlay" class="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center z-10 hidden">
+        <div class="bg-purple-900/20 border border-purple-500/30 p-8 rounded-2xl max-w-xs w-full neon-border">
+          <i data-lucide="gamepad-2" class="w-16 h-16 text-purple-400 mx-auto mb-4 animate-bounce"></i>
+          <h2 id="overlay-title" class="text-2xl font-black mb-2 text-purple-400 uppercase tracking-widest">GAME OVER</h2>
+          <p id="overlay-score" class="text-slate-300 font-bold mb-6 text-lg">SCORE: 0</p>
+          <button id="start-btn" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3 px-6 rounded-xl transition shadow-lg shadow-purple-500/30">
+            시작하기
+          </button>
+        </div>
+      </div>
+
+      <!-- 색상 셔플 시 번쩍이는 알림 오버레이 -->
+      <div id="shuffle-alert" class="absolute inset-0 bg-white/30 flex items-center justify-center pointer-events-none opacity-0 transition-opacity duration-300 z-20">
+        <div class="bg-slate-950/90 border-2 border-yellow-400 text-yellow-400 px-6 py-4 rounded-xl text-xl font-black tracking-widest uppercase animate-pulse">
+          ⚡ COLOR SHUFFLED! ⚡
+        </div>
+      </div>
+
+      <!-- 좌우 터치 가이드 힌트 레이어 (투명) -->
+      <div class="absolute inset-0 flex pointer-events-none text-xs text-slate-600 font-bold opacity-30 select-none">
+        <div class="w-1/2 h-full flex items-center justify-center border-r border-dashed border-slate-800">
+          <span>TAP TO ROTATE</span>
+        </div>
+        <div class="w-1/2 h-full flex items-center justify-center">
+          <span>TAP TO DROP</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 스코어 현황판 -->
+    <div class="w-full grid grid-cols-2 gap-3 mt-3">
+      <div class="bg-slate-900/60 border border-slate-800/80 p-3 rounded-xl flex flex-col items-center">
+        <span class="text-xs text-slate-400">SCORE</span>
+        <span id="score" class="text-xl font-black text-white">0</span>
+      </div>
+      <div class="bg-slate-900/60 border border-slate-800/80 p-3 rounded-xl flex flex-col items-center">
+        <span class="text-xs text-slate-400">LINES</span>
+        <span id="lines-cleared" class="text-xl font-black text-white">0</span>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- 하단 모바일 조작 설명 보드 -->
+  <footer class="w-full max-w-md bg-slate-900/40 border border-slate-800/50 p-3 rounded-xl mt-2">
+    <h3 class="text-xs text-purple-400 font-bold mb-2 flex items-center gap-1">
+      <i data-lucide="smartphone" class="w-4 h-4"></i>
+      모바일 조작 설명 (세로 모드 최적화)
+    </h3>
+    <div class="grid grid-cols-3 gap-2 text-[11px] text-slate-400">
+      <div class="bg-slate-950/50 p-2 rounded-lg text-center">
+        <strong class="text-white block mb-0.5">왼쪽 터치</strong> 블록 회전
+      </div>
+      <div class="bg-slate-950/50 p-2 rounded-lg text-center">
+        <strong class="text-white block mb-0.5">오른쪽 터치</strong> 한 칸 하강
+      </div>
+      <div class="bg-slate-950/50 p-2 rounded-lg text-center">
+        <strong class="text-white block mb-0.5">좌우 쓸기(Swipe)</strong> 블록 이동
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Lucide 아이콘 초기화
+    lucide.createIcons();
+
+    // 테트리스 기본 설정 및 상수
+    const ROWS = 20;
+    const COLS = 10;
+    
+    // 블록별 원래 기본 색상들 (디폴트 테마)
+    const BASE_COLORS = {
+      'I': '#06b6d4', // cyan
+      'O': '#eab308', // yellow
+      'T': '#a855f7', // purple
+      'S': '#22c55e', // green
+      'Z': '#ef4444', // red
+      'J': '#3b82f6', // blue
+      'L': '#f97316'  // orange
+    };
+
+    // 실시간으로 변경될 블록 색상 맵 (처음에는 디폴트와 동일하게 설정)
+    let currentBlockColors = { ...BASE_COLORS };
+
+    // 테트리미노 블록 모양 정의
+    const SHAPES = {
+      'I': [[0,0,0,0], [1,1,1,1], [0,0,0,0], [0,0,0,0]],
+      'O': [[1,1], [1,1]],
+      'T': [[0,1,0], [1,1,1], [0,0,0]],
+      'S': [[0,1,1], [1,1,0], [0,0,0]],
+      'Z': [[1,1,0], [0,1,1], [0,0,0]],
+      'J': [[1,0,0], [1,1,1], [0,0,0]],
+      'L': [[0,0,1], [1,1,1], [0,0,0]]
+    };
+
+    // 블록 종류별 한글 별명 정의 (플레이어 안내용)
+    const PIECE_NAMES = {
+      'I': '긴 막대 (I)',
+      'O': '정사각형 (O)',
+      'T': '모자 모양 (T)',
+      'S': '오른쪽 번개 (S)',
+      'Z': '왼쪽 번개 (Z)',
+      'J': '왼쪽 니은 (J)',
+      'L': '오른쪽 니은 (L)'
+    };
+
+    // 게임 상태 변수들
+    let board = [];
+    let currentPiece = null;
+    let nextPiece = null;
+    let score = 0;
+    let linesClearedTotal = 0;
+    let gameInterval = null;
+    let isGameOver = true;
+
+    // --- 핵심 무작위 규칙을 위한 변수 ---
+    let linesSinceLastShuffle = 0; // 마지막 셔플 이후 지운 줄 수
+    let targetShuffleLines = 3;   // 색상을 바꿀 목표 줄 수 (1~5 중 무작위)
+
+    // DOM 요소 캐싱
+    const gameBoardEl = document.getElementById('game-board');
+    const nextPreviewEl = document.getElementById('next-preview');
+    const nextPieceNameEl = document.getElementById('next-piece-name');
+    const scoreEl = document.getElementById('score');
+    const linesClearedEl = document.getElementById('lines-cleared');
+    const shuffleProgressEl = document.getElementById('shuffle-progress');
+    const overlayEl = document.getElementById('overlay');
+    const overlayTitleEl = document.getElementById('overlay-title');
+    const overlayScoreEl = document.getElementById('overlay-score');
+    const startBtn = document.getElementById('start-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const shuffleAlertEl = document.getElementById('shuffle-alert');
+
+    // 보드 HTML 격자 그리기 초기화
+    function initBoardDOM() {
+      gameBoardEl.innerHTML = '';
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const cell = document.createElement('div');
+          cell.id = `cell-${r}-${c}`;
+          cell.className = 'bg-slate-900 rounded-[2px] transition-all duration-150 border border-slate-950';
+          gameBoardEl.appendChild(cell);
+        }
+      }
+    }
+
+    // 다음 블록 미리보기 DOM 초기화
+    function initPreviewDOM() {
+      nextPreviewEl.innerHTML = '';
+      for (let i = 0; i < 16; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'bg-slate-950 rounded-[1px]';
+        nextPreviewEl.appendChild(cell);
+      }
+    }
+
+    // 게임 상태 초기화
+    function initGame() {
+      // 2차원 배열 게임 판 비우기
+      board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+      score = 0;
+      linesClearedTotal = 0;
+      linesSinceLastShuffle = 0;
+      
+      // 첫 무작위 색상 변경 목표 설정 (1~5 중 하나)
+      setNewShuffleTarget();
+      
+      // 색상 맵 초기화
+      resetColors();
+
+      currentPiece = getRandomPiece();
+      nextPiece = getRandomPiece();
+
+      isGameOver = false;
+      overlayEl.classList.add('hidden');
+
+      updateScoreDOM();
+      drawBoard();
+      drawPreview();
+
+      // 기존 인터벌 제거 후 새로 시작
+      if (gameInterval) clearInterval(gameInterval);
+      gameInterval = setInterval(gameLoop, 700);
+    }
+
+    // 1~5 중 색상이 변화할 무작위 줄 개수 설정
+    function setNewShuffleTarget() {
+      targetShuffleLines = Math.floor(Math.random() * 5) + 1;
+      updateShuffleProgressDOM();
+    }
+
+    // 색상을 다시 원래 기본값으로 초기화
+    function resetColors() {
+      currentBlockColors = { ...BASE_COLORS };
+    }
+
+    // 블록들의 색상을 무작위로 뒤바꾸기 (셔플)
+    function shuffleColors() {
+      const keys = Object.keys(BASE_COLORS);
+      // 색상 값들을 무작위로 섞은 배열 생성
+      const shuffledValues = Object.values(BASE_COLORS).sort(() => Math.random() - 0.5);
+      
+      // 각 모양 기호에 무작위 색상 맵핑
+      keys.forEach((key, index) => {
+        currentBlockColors[key] = shuffledValues[index];
+      });
+
+      // 셔플 알림 연출 (화면 깜빡임)
+      shuffleAlertEl.classList.remove('opacity-0');
+      shuffleAlertEl.classList.add('opacity-100');
+      
+      // 햅틱 진동 피드백 (모바일 지원 기기용)
+      if (navigator.vibrate) {
+        navigator.vibrate([100, 50, 100]);
+      }
+
+      setTimeout(() => {
+        shuffleAlertEl.classList.remove('opacity-100');
+        shuffleAlertEl.classList.add('opacity-0');
+      }, 800);
+    }
+
+    // 무작위 피스 뽑기
+    function getRandomPiece() {
+      const types = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+      const type = types[Math.floor(Math.random() * types.length)];
+      const matrix = SHAPES[type];
+      
+      return {
+        type: type,
+        matrix: JSON.parse(JSON.stringify(matrix)), // 깊은 복사
+        row: type === 'I' ? -1 : 0, // 대략적으로 화면 위 중앙에 걸치도록 배치
+        col: Math.floor((COLS - matrix[0].length) / 2)
+      };
+    }
+
+    // 매 틱마다 진행될 게임 루프
+    function gameLoop() {
+      if (isGameOver) return;
+      if (!movePiece(1, 0)) {
+        // 더 이상 아래로 내려가지 못하면 보드에 고정시킴
+        lockPiece();
+      }
+    }
+
+    // 조작: 회전, 이동 처리
+    function movePiece(rowOffset, colOffset) {
+      if (canMove(currentPiece.matrix, currentPiece.row + rowOffset, currentPiece.col + colOffset)) {
+        currentPiece.row += rowOffset;
+        currentPiece.col += colOffset;
+        drawBoard();
+        return true;
+      }
+      return false;
+    }
+
+    // 회전 처리
+    function rotatePiece() {
+      const matrix = currentPiece.matrix;
+      const n = matrix.length;
+      // 90도 시계방향 회전
+      const rotated = Array.from({ length: n }, () => Array(n).fill(0));
+      for (let r = 0; r < n; r++) {
+        for (let c = 0; c < n; c++) {
+          rotated[c][n - 1 - r] = matrix[r][c];
+        }
+      }
+
+      // 회전 후 벽에 걸리거나 충돌할 경우를 대비해 위치 조정 (Wall kick)
+      const offsets = [0, -1, 1, -2, 2];
+      for (let offset of offsets) {
+        if (canMove(rotated, currentPiece.row, currentPiece.col + offset)) {
+          currentPiece.matrix = rotated;
+          currentPiece.col += offset;
+          drawBoard();
+          
+          // 가벼운 진동 효과
+          if (navigator.vibrate) navigator.vibrate(10);
+          break;
+        }
+      }
+    }
+
+    // 경계 및 충돌 검사
+    function canMove(matrix, startRow, startCol) {
+      for (let r = 0; r < matrix.length; r++) {
+        for (let c = 0; c < matrix[r].length; c++) {
+          if (matrix[r][c]) {
+            const nextRow = startRow + r;
+            const nextCol = startCol + c;
+
+            // 바닥 및 양옆 경계 검사
+            if (nextCol < 0 || nextCol >= COLS || nextRow >= ROWS) {
+              return false;
+            }
+
+            // 위쪽 경계를 넘어서는 경우는 무시하고 그리되, 음수 row에 있는 채워진 타일은 충돌하지 않도록 보정
+            if (nextRow >= 0 && board[nextRow][nextCol]) {
+              return false;
+            }
+          }
+        }
+      }
+      return true;
+    }
+
+    // 피스 보드 고정 및 줄 지우기 검사
+    function lockPiece() {
+      for (let r = 0; r < currentPiece.matrix.length; r++) {
+        for (let c = 0; c < currentPiece.matrix[r].length; c++) {
+          if (currentPiece.matrix[r][c]) {
+            const targetRow = currentPiece.row + r;
+            const targetCol = currentPiece.col + c;
+            
+            // 맨 위를 초과하여 쌓이게 되면 게임오버
+            if (targetRow < 0) {
+              gameOver();
+              return;
+            }
+            board[targetRow][targetCol] = currentPiece.type;
+          }
+        }
+      }
+
+      // 줄 지우기 수행
+      checkLines();
+
+      // 다음 블록 투입
+      currentPiece = nextPiece;
+      nextPiece = getRandomPiece();
+
+      // 새 블록을 꺼내자마자 둘 수 없다면 게임오버
+      if (!canMove(currentPiece.matrix, currentPiece.row, currentPiece.col)) {
+        gameOver();
+      }
+
+      drawBoard();
+      drawPreview();
+    }
+
+    // 줄 채워졌는지 확인하고 가로줄 지우기
+    function checkLines() {
+      let linesCount = 0;
+      
+      for (let r = ROWS - 1; r >= 0; r--) {
+        const isFull = board[r].every(val => val !== 0);
+        if (isFull) {
+          linesCount++;
+          board.splice(r, 1);
+          board.unshift(Array(COLS).fill(0));
+          r++; // 인덱스 보정
+        }
+      }
+
+      if (linesCount > 0) {
+        score += linesCount * linesCount * 100;
+        linesClearedTotal += linesCount;
+        linesSinceLastShuffle += linesCount;
+
+        // 무작위 색상 변화 핵심 연출
+        if (linesSinceLastShuffle >= targetShuffleLines) {
+          shuffleColors(); // 전체 블록 색상 섞기
+          linesSinceLastShuffle = 0;
+          setNewShuffleTarget(); // 다음 무작위 셔플 목표량 재설정
+        }
+
+        updateScoreDOM();
+        
+        if (navigator.vibrate) navigator.vibrate(150);
+      }
+    }
+
+    // 화면 그리기 (렌더링)
+    function drawBoard() {
+      // 1. 보드 지우기 & 누적된 블록 그리기
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const cell = document.getElementById(`cell-${r}-${c}`);
+          const blockType = board[r][c];
+
+          if (blockType) {
+            cell.style.backgroundColor = currentBlockColors[blockType];
+            cell.style.boxShadow = `inset 0 0 8px rgba(255, 255, 255, 0.4), 0 0 4px ${currentBlockColors[blockType]}`;
+          } else {
+            cell.style.backgroundColor = '';
+            cell.style.boxShadow = '';
+          }
+        }
+      }
+
+      // 2. 현재 내려오는 중인 피스 그리기
+      if (currentPiece && !isGameOver) {
+        for (let r = 0; r < currentPiece.matrix.length; r++) {
+          for (let c = 0; c < currentPiece.matrix[r].length; c++) {
+            if (currentPiece.matrix[r][c]) {
+              const drawRow = currentPiece.row + r;
+              const drawCol = currentPiece.col + c;
+
+              if (drawRow >= 0 && drawRow < ROWS && drawCol >= 0 && drawCol < COLS) {
+                const cell = document.getElementById(`cell-${drawRow}-${drawCol}`);
+                const color = currentBlockColors[currentPiece.type];
+                cell.style.backgroundColor = color;
+                cell.style.boxShadow = `inset 0 0 8px rgba(255, 255, 255, 0.6), 0 0 6px ${color}`;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 다음 블록 미리보기 및 텍스트 매핑 그리기
+    function drawPreview() {
+      const cells = nextPreviewEl.children;
+      // 초기화
+      for (let i = 0; i < cells.length; i++) {
+        cells[i].style.backgroundColor = '';
+        cells[i].style.boxShadow = '';
+      }
+
+      if (!nextPiece) {
+        nextPieceNameEl.textContent = '대기 중...';
+        return;
+      }
+
+      // 한글 이름 갱신
+      nextPieceNameEl.textContent = PIECE_NAMES[nextPiece.type];
+
+      const matrix = nextPiece.matrix;
+      const size = matrix.length;
+      
+      // 4x4 그리드의 중앙 정렬을 위한 offset 계산
+      const rowOffset = Math.floor((4 - size) / 2);
+      const colOffset = Math.floor((4 - size) / 2);
+
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          if (matrix[r][c]) {
+            const previewIndex = (r + rowOffset) * 4 + (c + colOffset);
+            if (previewIndex >= 0 && previewIndex < 16) {
+              const color = currentBlockColors[nextPiece.type];
+              cells[previewIndex].style.backgroundColor = color;
+              cells[previewIndex].style.boxShadow = `inset 0 0 4px rgba(255, 255, 255, 0.5)`;
+            }
+          }
+        }
+      }
+    }
+
+    // 현황판 실시간 갱신
+    function updateScoreDOM() {
+      scoreEl.textContent = score;
+      linesClearedEl.textContent = linesClearedTotal;
+      updateShuffleProgressDOM();
+    }
+
+    function updateShuffleProgressDOM() {
+      shuffleProgressEl.textContent = `${linesSinceLastShuffle} / ${targetShuffleLines}`;
+      
+      // 셔플 직전 위기 상황 연출 (글자 색 바꿈)
+      if (linesSinceLastShuffle >= targetShuffleLines - 1) {
+        shuffleProgressEl.className = "text-lg font-black text-yellow-400 animate-pulse";
+      } else {
+        shuffleProgressEl.className = "text-lg font-black text-white";
+      }
+    }
+
+    // 게임 종료
+    function gameOver() {
+      isGameOver = true;
+      if (gameInterval) clearInterval(gameInterval);
+
+      overlayTitleEl.textContent = "GAME OVER";
+      overlayScoreEl.textContent = `SCORE: ${score}`;
+      startBtn.textContent = "다시 도전하기";
+      overlayEl.classList.remove('hidden');
+
+      if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
+    }
+
+
+    // --- 모바일 터치 및 스와이프 조작 설계 ---
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let isSwipeDetected = false;
+    const SWIPE_THRESHOLD = 30; // 스와이프를 인정할 최소 픽셀 거리
+
+    // 터치 입력 시작 시점 감지
+    window.addEventListener('touchstart', function(e) {
+      if (isGameOver) return;
+      const touch = e.touches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+      isSwipeDetected = false;
+    }, { passive: true });
+
+    // 터치 중 손가락 이동 감지 (좌우 쓸어넘기기로 블록 이동)
+    window.addEventListener('touchmove', function(e) {
+      if (isGameOver || !currentPiece) return;
+      const touch = e.touches[0];
+      const diffX = touch.clientX - touchStartX;
+      const diffY = touch.clientY - touchStartY;
+
+      // 가로 드래그 거리가 설정해 둔 역치(30px)를 넘었을 때 좌우 이동 수행
+      if (Math.abs(diffX) > SWIPE_THRESHOLD) {
+        if (diffX > 0) {
+          movePiece(0, 1); // 오른쪽 이동
+        } else {
+          movePiece(0, -1); // 왼쪽 이동
+        }
+        touchStartX = touch.clientX; 
+        isSwipeDetected = true;
+      }
+    }, { passive: true });
+
+    // 손가락 터치 뗌 감지 (회전 및 하강)
+    window.addEventListener('touchend', function(e) {
+      if (isGameOver || !currentPiece) return;
+      
+      // 사용자가 좌우 쓸기(Swipe) 조작을 했다면 탭 제스처는 생략
+      if (isSwipeDetected) return;
+
+      const screenWidth = window.innerWidth;
+      const lastTouch = e.changedTouches[0];
+      const endX = lastTouch.clientX;
+
+      // 화면 절반 기준으로 터치 방향 파악
+      if (endX < screenWidth / 2) {
+        // 1. 화면 왼쪽 터치 -> 블록 회전
+        rotatePiece();
+      } else {
+        // 2. 화면 오른쪽 터치 -> 한 칸 아래로 빠르게 하강
+        movePiece(1, 0);
+      }
+    }, { passive: true });
+
+
+    // 키보드 지원
+    window.addEventListener('keydown', function(e) {
+      if (isGameOver || !currentPiece) return;
+      
+      switch (e.key) {
+        case 'ArrowLeft':
+          movePiece(0, -1);
+          break;
+        case 'ArrowRight':
+          movePiece(0, 1);
+          break;
+        case 'ArrowDown':
+          movePiece(1, 0);
+          break;
+        case 'ArrowUp':
+          rotatePiece();
+          break;
+        case ' ': // 스페이스 바: 끝까지 단숨에 내리기 (하드 드롭)
+          while(movePiece(1, 0)) {}
+          lockPiece();
+          break;
+      }
+    });
+
+    // 시작 및 리셋 버튼 리스너 연동
+    startBtn.addEventListener('click', initGame);
+    resetBtn.addEventListener('click', () => {
+      initGame();
+    });
+
+    // 최초 로드 시 화면 초기화 및 대기창 띄우기
+    window.onload = function() {
+      initBoardDOM();
+      initPreviewDOM();
+      overlayTitleEl.textContent = "READY?";
+      overlayScoreEl.textContent = "지워진 블록들의 색깔이 마법처럼 바뀝니다";
+      startBtn.textContent = "게임 시작";
+      overlayEl.classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>
